@@ -1,6 +1,5 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
-#include "gotodialog.h"
 #include "hexwidget.h"
 #include <QDebug>
 #include <QFileDialog>
@@ -11,7 +10,8 @@
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::MainWindow)
+    ui(new Ui::MainWindow),
+    gotoDialog(this)
 {
     ui->setupUi(this);
     this->setWindowFlag(Qt::WindowType::Dialog);
@@ -81,7 +81,7 @@ void MainWindow::handleGoto()
     if (!hw)
         return;
 
-    GotoDialog gotoDialog(hw->fileSize(), this);
+    gotoDialog.setFileSize(hw->fileSize());
     if (gotoDialog.exec() == QDialog::Accepted) {
         hw->gotoOffset(gotoDialog.getEnteredOffset());
     }

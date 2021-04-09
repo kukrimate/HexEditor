@@ -12,8 +12,9 @@ class GotoDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit GotoDialog(qint64 fileSize, QWidget *parent = nullptr);
+    explicit GotoDialog(QWidget *parent = nullptr);
     ~GotoDialog();
+    void setFileSize(qint64 fileSize);
     qint64 getEnteredOffset();
 
 private:

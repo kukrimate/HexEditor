@@ -2,8 +2,8 @@
 #include "ui_gotodialog.h"
 #include <QMessageBox>
 
-GotoDialog::GotoDialog(qint64 fileSize, QWidget *parent) :
-    QDialog(parent), ui(new Ui::GotoDialog), fileSize(fileSize)
+GotoDialog::GotoDialog(QWidget *parent) :
+    QDialog(parent), ui(new Ui::GotoDialog), fileSize(0)
 {
     ui->setupUi(this);
 }
@@ -11,6 +11,11 @@ GotoDialog::GotoDialog(qint64 fileSize, QWidget *parent) :
 GotoDialog::~GotoDialog()
 {
     delete ui;
+}
+
+void GotoDialog::setFileSize(qint64 fileSize)
+{
+    this->fileSize = fileSize;
 }
 
 qint64 GotoDialog::getEnteredOffset()

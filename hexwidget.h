@@ -11,17 +11,17 @@ class HexWidget : public QWidget
 private:
     // Underlying file
     QFile file;
-    // Current offset into the file
-    qint64 file_offs;
+    // Current window into file
+    qint64 window_offs;
     // Line metrics
     int total_lines, can_fit_lines;
     // For rendering fonts
     QFont font;
     QFontMetrics fm;
     // Scrolling
-    QScrollBar scrollBar;
+    QScrollBar scroll_bar;
     // Cursor position
-    qint64 cursor_pos;
+    qint64 cursor_offs;
 
     void handleResize();
 private slots:
@@ -33,7 +33,7 @@ public:
     qint64 fileSize();
     void gotoOffset(qint64 offset);
 
-    virtual bool eventFilter(QObject *, QEvent *) override;
+    virtual void keyPressEvent(QKeyEvent *) override;
     virtual void wheelEvent(QWheelEvent *) override;
     virtual void resizeEvent(QResizeEvent *) override;
     virtual void paintEvent(QPaintEvent *) override;

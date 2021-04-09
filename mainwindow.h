@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include "gotodialog.h"
 
 namespace Ui {
 class MainWindow;
@@ -17,7 +18,8 @@ public:
 
 private:
     Ui::MainWindow *ui;
-    virtual void keyPressEvent(QKeyEvent *);
+    GotoDialog gotoDialog;
+    virtual void keyPressEvent(QKeyEvent *) override;
 
 private slots:
     void handleOpen();

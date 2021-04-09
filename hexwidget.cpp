@@ -16,11 +16,13 @@ static QColor BLUE(0, 70, 255);
 static QColor GRAY(119, 119, 119);
 
 HexWidget::HexWidget(QString fileName, QWidget *parent)
-    : QWidget(parent), file(fileName), file_offs(0),
+    : QWidget(parent), file(fileName), window_offs(0),
       font("DejaVu Sans Mono", FONT_SIZE), fm(font),
-      scrollBar(Qt::Orientation::Vertical, this),
-      cursor_pos(0)
+      scroll_bar(Qt::Orientation::Vertical, this),
+      cursor_offs(0)
 {
+    setFocusPolicy(Qt::StrongFocus);
+
     file.open(QFile::ReadOnly);
     if (file.error() != QFile::FileError::NoError)
         throw file.errorString();
@@ -31,11 +33,8 @@ HexWidget::HexWidget(QString fileName, QWidget *parent)
         throw QString("File too big to display!");
     total_lines = static_cast<int>(total_lines64);
 
-    // Only way I can figure out to get key events here ;(
-    qApp->installEventFilter(this);
-
-    QObject::connect(&scrollBar, SIGNAL(valueChanged(int)), this, SLOT(handleScroll(int)));
-    scrollBar.show();
+    QObject::connect(&scroll_bar, SIGNAL(valueChanged(int)), this, SLOT(handleScroll(int)));
+    scroll_bar.show();
     handleResize();
 }
 
@@ -51,8 +50,16 @@ qint64 HexWidget::fileSize()
 
 void HexWidget::gotoOffset(qint64 offset)
 {
-    assert(offset >= 0 && offset < fileSize());
-    scrollBar.setValue(static_cast<int>(offset / BYTES_PER_LINE));
+    // Ignore invalid goto
+    if (offset < 0 || offset > file.size())
+        return;
+
+    // Move cursor offset
+    cursor_offs = offset;
+
+    // See if we need to scroll
+    scroll_bar.setValue(static_cast<int>(offset / BYTES_PER_LINE));
+    repaint();
 }
 
 void HexWidget::handleResize()
@@ -62,68 +69,53 @@ void HexWidget::handleResize()
 
     // Resize scrollbar
     int sb_max = total_lines - 1;
-    scrollBar.setRange(0, sb_max);
-    scrollBar.setGeometry(this->width() - scrollBar.width(), 0, scrollBar.width(), this->height());
+    scroll_bar.setRange(0, sb_max);
+    scroll_bar.setGeometry(this->width() - scroll_bar.width(), 0, scroll_bar.width(), this->height());
 }
 
 void HexWidget::handleScroll(int pos)
 {
-    file_offs = pos * BYTES_PER_LINE;
+    window_offs = pos * BYTES_PER_LINE;
     repaint();
 }
 
-bool HexWidget::eventFilter(QObject *object, QEvent *event)
+void HexWidget::keyPressEvent(QKeyEvent *event)
 {
-    if (event->type() == QEvent::Type::KeyPress) {
-        QKeyEvent *key_event = reinterpret_cast<QKeyEvent*>(event);
-        switch (key_event->key()) {
-        case Qt::Key_Up: {
-            qint64 new_pos = cursor_pos - BYTES_PER_LINE;
-            if (new_pos >= 0) {
-                cursor_pos = new_pos;
-            }
-            repaint();
-            return 1;
+    QKeyEvent *key_event = reinterpret_cast<QKeyEvent*>(event);
+    qint64 new_offs;
+    switch (key_event->key()) {
+    case Qt::Key_Up:
+        gotoOffset(cursor_offs - BYTES_PER_LINE);
+        break;
+    case Qt::Key_Down:
+        gotoOffset(cursor_offs + BYTES_PER_LINE);
+        break;
+    case Qt::Key_Left:
+        gotoOffset(cursor_offs - 1);
+        break;
+    case Qt::Key_Right:
+        gotoOffset(cursor_offs + 1);
+        break;
+    case Qt::Key_PageUp:
+        new_offs = cursor_offs - can_fit_lines * BYTES_PER_LINE;
+        if (new_offs < 0) {
+            new_offs = cursor_offs % BYTES_PER_LINE;
         }
-        case Qt::Key_Down: {
-            qint64 new_pos = cursor_pos + BYTES_PER_LINE;
-            if (new_pos < file.size()) {
-                cursor_pos = new_pos;
-            }
-            repaint();
-            return 1;
-        }
-        case Qt::Key_Left: {
-            if (cursor_pos > 0) {
-                --cursor_pos;
-            }
-            repaint();
-            return 1;
-        }
-        case Qt::Key_Right: {
-            if (cursor_pos < file.size() - 1) {
-                ++cursor_pos;
-            }
-            repaint();
-            return 1;
-        }
-        case Qt::Key_PageUp:
-            return 1;
-        case Qt::Key_PageDown:
-            return 1;
-        case Qt::Key_Home:
-            return 1;
-        case Qt::Key_End:
-            return 1;
-        }
+        gotoOffset(new_offs);
+        break;
+    case Qt::Key_PageDown:
+        gotoOffset(cursor_offs + can_fit_lines * BYTES_PER_LINE);
+        break;
+    case Qt::Key_Home:
+        break;
+    case Qt::Key_End:
+        break;
     }
-
-    return QObject::eventFilter(object, event);
 }
 
 void HexWidget::wheelEvent(QWheelEvent *event)
 {
-    scrollBar.event(event);
+    scroll_bar.event(event);
 }
 
 void HexWidget::resizeEvent(QResizeEvent *)
@@ -166,7 +158,7 @@ void HexWidget::paintEvent(QPaintEvent *)
     y += fm.height() + GAP;
 
     // Start reading bytes from the correct offset
-    file.seek(file_offs);
+    file.seek(window_offs);
 
     for (int line_idx = 0; line_idx < can_fit_lines; ++line_idx) {
         // Read data
@@ -184,7 +176,7 @@ void HexWidget::paintEvent(QPaintEvent *)
         x = byte_start;
         for (int col_idx = 0; col_idx < hexline.size(); ++col_idx) {
             // Draw cursor
-            if (cursor_pos == file_offs + BYTES_PER_LINE * line_idx + col_idx) {
+            if (cursor_offs == window_offs + BYTES_PER_LINE * line_idx + col_idx) {
                 painter.fillRect(x, y + 4, -2, -fm.capHeight() - 8, BLACK);
             }
 
