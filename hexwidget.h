@@ -14,12 +14,14 @@ private:
     // Current offset into the file
     qint64 file_offs;
     // Line metrics
-    int totalLines, canFitLines;
+    int total_lines, can_fit_lines;
     // For rendering fonts
     QFont font;
     QFontMetrics fm;
     // Scrolling
     QScrollBar scrollBar;
+    // Cursor position
+    qint64 cursor_pos;
 
     void handleResize();
 private slots:

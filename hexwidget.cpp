@@ -4,7 +4,7 @@
 #include <QObject>
 #include <QPainter>
 #include <QStyle>
-#include <QWheelEvent>
+#include <QKeyEvent>
 
 static int    FONT_SIZE = 10;
 static int    BYTES_PER_LINE = 16;
@@ -12,22 +12,24 @@ static int    SPLITAT = 8;
 static int    GAP = 10;
 static int    BIGGAP = 20;
 static QColor BLACK(0, 0, 0);
-static QColor BLUE(0, 0, 255);
+static QColor BLUE(0, 70, 255);
+static QColor GRAY(119, 119, 119);
 
 HexWidget::HexWidget(QString fileName, QWidget *parent)
     : QWidget(parent), file(fileName), file_offs(0),
       font("DejaVu Sans Mono", FONT_SIZE), fm(font),
-      scrollBar(Qt::Orientation::Vertical, this)
+      scrollBar(Qt::Orientation::Vertical, this),
+      cursor_pos(0)
 {
     file.open(QFile::ReadOnly);
     if (file.error() != QFile::FileError::NoError)
         throw file.errorString();
 
     // Calculate the number of lines for our file
-    qint64 totalLines64 = (file.size() + BYTES_PER_LINE - 1) / BYTES_PER_LINE;
-    if (totalLines64 > INT_MAX) // TODO: fixme, somehow, scrollbars suck in Qt ;(
+    qint64 total_lines64 = (file.size() + BYTES_PER_LINE - 1) / BYTES_PER_LINE;
+    if (total_lines64 > INT_MAX) // TODO: fixme, somehow, scrollbars suck in Qt ;(
         throw QString("File too big to display!");
-    totalLines = static_cast<int>(totalLines64);
+    total_lines = static_cast<int>(total_lines64);
 
     // Only way I can figure out to get key events here ;(
     qApp->installEventFilter(this);
@@ -56,11 +58,11 @@ void HexWidget::gotoOffset(qint64 offset)
 void HexWidget::handleResize()
 {
     // Update line count
-    canFitLines = (this->height() - 30) / fm.height();
+    can_fit_lines = (this->height() - 30) / fm.height();
 
     // Resize scrollbar
-    int sbMax = totalLines - 1;
-    scrollBar.setRange(0, sbMax);
+    int sb_max = total_lines - 1;
+    scrollBar.setRange(0, sb_max);
     scrollBar.setGeometry(this->width() - scrollBar.width(), 0, scrollBar.width(), this->height());
 }
 
@@ -73,8 +75,49 @@ void HexWidget::handleScroll(int pos)
 bool HexWidget::eventFilter(QObject *object, QEvent *event)
 {
     if (event->type() == QEvent::Type::KeyPress) {
-        scrollBar.event(event);
+        QKeyEvent *key_event = reinterpret_cast<QKeyEvent*>(event);
+        switch (key_event->key()) {
+        case Qt::Key_Up: {
+            qint64 new_pos = cursor_pos - BYTES_PER_LINE;
+            if (new_pos >= 0) {
+                cursor_pos = new_pos;
+            }
+            repaint();
+            return 1;
+        }
+        case Qt::Key_Down: {
+            qint64 new_pos = cursor_pos + BYTES_PER_LINE;
+            if (new_pos < file.size()) {
+                cursor_pos = new_pos;
+            }
+            repaint();
+            return 1;
+        }
+        case Qt::Key_Left: {
+            if (cursor_pos > 0) {
+                --cursor_pos;
+            }
+            repaint();
+            return 1;
+        }
+        case Qt::Key_Right: {
+            if (cursor_pos < file.size() - 1) {
+                ++cursor_pos;
+            }
+            repaint();
+            return 1;
+        }
+        case Qt::Key_PageUp:
+            return 1;
+        case Qt::Key_PageDown:
+            return 1;
+        case Qt::Key_Home:
+            return 1;
+        case Qt::Key_End:
+            return 1;
+        }
     }
+
     return QObject::eventFilter(object, event);
 }
 
@@ -103,7 +146,7 @@ void HexWidget::paintEvent(QPaintEvent *)
     x += fm.width(offs_heading) + BIGGAP;
 
     int byte_start = x;
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < BYTES_PER_LINE; ++i) {
         auto num_str = QString::asprintf("%02X", i);
         painter.drawText(x, y, num_str);
         x += fm.width(num_str);
@@ -125,7 +168,7 @@ void HexWidget::paintEvent(QPaintEvent *)
     // Start reading bytes from the correct offset
     file.seek(file_offs);
 
-    for (int line_idx = 0; line_idx < canFitLines; ++line_idx) {
+    for (int line_idx = 0; line_idx < can_fit_lines; ++line_idx) {
         // Read data
         auto hexline = file.read(BYTES_PER_LINE);
         if (hexline.size() == 0)
@@ -140,6 +183,12 @@ void HexWidget::paintEvent(QPaintEvent *)
         // Draw hex bytes
         x = byte_start;
         for (int col_idx = 0; col_idx < hexline.size(); ++col_idx) {
+            // Draw cursor
+            if (cursor_pos == file_offs + BYTES_PER_LINE * line_idx + col_idx) {
+                painter.fillRect(x, y + 4, -2, -fm.capHeight() - 8, BLACK);
+            }
+
+            // Draw byte
             auto bstr = QString::asprintf("%02X", static_cast<unsigned char>(hexline.at(col_idx)));
             painter.drawText(x, y, bstr);
             x += fm.width(bstr);
