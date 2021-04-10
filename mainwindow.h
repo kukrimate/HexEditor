@@ -14,15 +14,16 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
-    ~MainWindow();
+    ~MainWindow() override;
 
 private:
     Ui::MainWindow *ui;
     GotoDialog gotoDialog;
-    virtual void keyPressEvent(QKeyEvent *) override;
+    virtual bool eventFilter(QObject *, QEvent *) override;
 
 private slots:
     void handleOpen();
+    void handleTabChange();
     void handleTabClose();
     void handleGoto();
 };

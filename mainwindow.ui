@@ -223,10 +223,27 @@
     </hint>
    </hints>
   </connection>
+  <connection>
+   <sender>editorTabs</sender>
+   <signal>currentChanged(int)</signal>
+   <receiver>MainWindow</receiver>
+   <slot>handleTabChange()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>399</x>
+     <y>309</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>399</x>
+     <y>299</y>
+    </hint>
+   </hints>
+  </connection>
  </connections>
  <slots>
   <slot>handleOpen()</slot>
   <slot>handleTabClose()</slot>
   <slot>handleGoto()</slot>
+  <slot>handleTabChange()</slot>
  </slots>
 </ui>

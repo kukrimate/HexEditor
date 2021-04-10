@@ -9,23 +9,25 @@ class HexWidget : public QWidget
 {
     Q_OBJECT
 private:
+    QScrollBar scroll_bar;
+
     // Underlying file
     QFile file;
-    // Current window into file
-    qint64 window_offs;
-    // Line metrics
-    int total_lines, can_fit_lines;
+    // Number of lines it takes to display our file
+    qint64 total_lines;
+
     // For rendering fonts
     QFont font;
-    QFontMetrics fm;
-    // Scrolling
-    QScrollBar scroll_bar;
-    // Cursor position
-    qint64 cursor_offs;
+    QFontMetrics font_metrics;
 
-    void handleResize();
-private slots:
-    void handleScroll(int);
+    // Current number of lines that can fit on screen
+    qint64 displayed_lines;
+
+    // Cursor position
+    qint64 cursor_line, cursor_col;
+
+    void moveCursorLines(qint64 lines);
+
 public:
     explicit HexWidget(QString fileName, QWidget *parent = nullptr);
     ~HexWidget() override;

@@ -14,6 +14,7 @@ MainWindow::MainWindow(QWidget *parent) :
     gotoDialog(this)
 {
     ui->setupUi(this);
+    qApp->installEventFilter(this);
     this->setWindowFlag(Qt::WindowType::Dialog);
 }
 
@@ -22,31 +23,38 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-void MainWindow::keyPressEvent(QKeyEvent *event)
+bool MainWindow::eventFilter(QObject *obj, QEvent *in_event)
 {
-    if (event->modifiers() == Qt::KeyboardModifier::ControlModifier) {
-        if (event->key() == Qt::Key_W) {
-            handleTabClose();
-        }
-    }
+    if (in_event->type() == QEvent::Type::KeyPress) {
+        QKeyEvent *event = reinterpret_cast<QKeyEvent*>(in_event);
 
-    if (event->modifiers() == Qt::KeyboardModifier::AltModifier) {
-        int idx = 0;
-        switch (event->key()) {
-        case Qt::Key_1: idx = 1; break;
-        case Qt::Key_2: idx = 2; break;
-        case Qt::Key_3: idx = 3; break;
-        case Qt::Key_4: idx = 4; break;
-        case Qt::Key_5: idx = 5; break;
-        case Qt::Key_6: idx = 6; break;
-        case Qt::Key_7: idx = 7; break;
-        case Qt::Key_8: idx = 8; break;
-        case Qt::Key_9: idx = 9; break;
+        if (event->modifiers() == Qt::KeyboardModifier::ControlModifier) {
+            if (event->key() == Qt::Key_W) {
+                handleTabClose();
+                return 1;
+            }
         }
-        if (idx > 0 && idx <= ui->editorTabs->count()) {
-            ui->editorTabs->setCurrentIndex(idx - 1);
+
+        if (event->modifiers() == Qt::KeyboardModifier::AltModifier) {
+            int idx = 0;
+            switch (event->key()) {
+            case Qt::Key_1: idx = 1; break;
+            case Qt::Key_2: idx = 2; break;
+            case Qt::Key_3: idx = 3; break;
+            case Qt::Key_4: idx = 4; break;
+            case Qt::Key_5: idx = 5; break;
+            case Qt::Key_6: idx = 6; break;
+            case Qt::Key_7: idx = 7; break;
+            case Qt::Key_8: idx = 8; break;
+            case Qt::Key_9: idx = 9; break;
+            }
+            if (idx > 0 && idx <= ui->editorTabs->count()) {
+                ui->editorTabs->setCurrentIndex(idx - 1);
+                return 1;
+            }
         }
     }
+    return QObject::eventFilter(obj, in_event);
 }
 
 void MainWindow::handleOpen()
@@ -67,22 +75,29 @@ void MainWindow::handleOpen()
     }
 }
 
+void MainWindow::handleTabChange()
+{
+    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(ui->editorTabs->currentWidget());
+    if (hex_widget) {
+        hex_widget->setFocus(Qt::FocusReason::NoFocusReason);
+    }
+}
+
 void MainWindow::handleTabClose()
 {
-    int idx = ui->editorTabs->currentIndex();
-    if (idx >= 0)
-        delete ui->editorTabs->widget(idx);
+    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(ui->editorTabs->currentWidget());
+    if (hex_widget) {
+        delete hex_widget;
+    }
 }
 
 void MainWindow::handleGoto()
 {
-    HexWidget *hw =
-            reinterpret_cast<HexWidget*>(ui->editorTabs->currentWidget());
-    if (!hw)
-        return;
-
-    gotoDialog.setFileSize(hw->fileSize());
-    if (gotoDialog.exec() == QDialog::Accepted) {
-        hw->gotoOffset(gotoDialog.getEnteredOffset());
+    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(ui->editorTabs->currentWidget());
+    if (hex_widget) {
+        gotoDialog.setFileSize(hex_widget->fileSize());
+        if (gotoDialog.exec() == QDialog::Accepted) {
+            hex_widget->gotoOffset(gotoDialog.getEnteredOffset());
+        }
     }
 }
