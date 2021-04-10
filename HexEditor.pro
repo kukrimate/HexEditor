@@ -28,12 +28,14 @@ SOURCES += \
         main.cpp \
         mainwindow.cpp \
     hexwidget.cpp \
-    gotodialog.cpp
+    gotodialog.cpp \
+    selection.cpp
 
 HEADERS += \
         mainwindow.h \
     hexwidget.h \
-    gotodialog.h
+    gotodialog.h \
+    selection.h
 
 FORMS += \
         mainwindow.ui \

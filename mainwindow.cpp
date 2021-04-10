@@ -1,12 +1,14 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "hexwidget.h"
+#include <QDesktopWidget>
 #include <QDebug>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QSizePolicy>
 #include <QKeyEvent>
 #include <QMessageBox>
+#include <QScreen>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -15,6 +17,8 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
     qApp->installEventFilter(this);
+
+    move(QApplication::screens().at(0)->geometry().center() - rect().center());
     this->setWindowFlag(Qt::WindowType::Dialog);
 }
 

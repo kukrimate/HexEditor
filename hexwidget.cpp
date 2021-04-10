@@ -12,6 +12,7 @@ static int    SPLITAT = 8;
 static int    GAP = 10;
 static int    BIGGAP = 20;
 static QColor BLACK(0, 0, 0);
+static QColor WHITE(255, 255, 255);
 static QColor BLUE(0, 70, 255);
 static QColor GRAY(119, 119, 119);
 
@@ -22,7 +23,8 @@ HexWidget::HexWidget(QString fileName, QWidget *parent)
       scroll_bar(this),
       file(fileName),
       font("DejaVu Sans Mono", FONT_SIZE),
-      font_metrics(font)
+      font_metrics(font),
+      cursor_offs(0)
 {
     setFocusPolicy(Qt::StrongFocus);
 
@@ -31,13 +33,10 @@ HexWidget::HexWidget(QString fileName, QWidget *parent)
         throw file.errorString();
     }
 
-    // Calculate the number of lines for our file
-    qint64 total_lines = (file.size() + BYTES_PER_LINE - 1) / BYTES_PER_LINE;
-
-    // Set cursor position
-    cursor_offs = 0;;
+    setMouseTracking(true);
 
     // Setup scrollbar
+    qint64 total_lines = (file.size() + BYTES_PER_LINE - 1) / BYTES_PER_LINE;
     if (total_lines > INT_MAX) {
         // TODO: fixme, somehow, scrollbars suck in Qt ;(
         throw QString("File too big to display!");
@@ -59,21 +58,30 @@ qint64 HexWidget::fileSize()
 
 void HexWidget::gotoOffset(qint64 offset)
 {
-    if (offset < 0 || offset >= file.size())
+    if (offset < 0 || offset > file.size())
         return;
 
     // Update cursor offset
     qint64 prev_cursor_offs = cursor_offs;
     cursor_offs = offset;
 
-    if (!isOnScreen(prev_cursor_offs)) {
-        // Cursor was not on screen -> just put the exact line on the
-        // top of the screen
-        scroll_bar.setValue(static_cast<int>(offset / BYTES_PER_LINE));
-    } else if (!isOnScreen(cursor_offs)) {
-        // If the new cursor is not on screen, we know the exact number of
-        // lines we need to move the screen
-        scroll_bar.setValue(scroll_bar.value() + static_cast<int>(cursor_offs - prev_cursor_offs) / BYTES_PER_LINE);
+    if (!isOnScreen(cursor_offs)) {
+        if (!isOnScreen(prev_cursor_offs)) {
+            // Cursor was not on screen -> just put the exact line on the
+            // top of the screen
+            scroll_bar.setValue(static_cast<int>(offset / BYTES_PER_LINE));
+        } else {
+            // If the new cursor is not on screen, we know the exact number of
+            // lines we need to move the screen
+            auto delta = static_cast<int>(cursor_offs / BYTES_PER_LINE - prev_cursor_offs / BYTES_PER_LINE);
+            scroll_bar.setValue(scroll_bar.value() + delta);
+        }
+    }
+
+    if (QApplication::keyboardModifiers() == Qt::KeyboardModifier::ShiftModifier) {
+        selection.extend(cursor_offs);
+    } else {
+        selection.setPivot(cursor_offs);
     }
 
     repaint();
@@ -89,6 +97,42 @@ bool HexWidget::isOnScreen(qint64 offset)
     qint64 screen_offs = scroll_bar.value() * BYTES_PER_LINE;
     qint64 screen_end = screen_offs + displayedLines() * BYTES_PER_LINE;
     return offset >= screen_offs && offset < screen_end;
+}
+
+qint64 HexWidget::translateGuiCoords(int gui_x, int gui_y)
+{
+    // Outside the hex grid
+    if (gui_x < grid_x || gui_y < grid_y || gui_x >= grid_x + BYTES_PER_LINE * cell_width + GAP)
+        return - 1;
+
+    int x = gui_x - grid_x, y = gui_y - grid_y;
+    if (x / cell_width > SPLITAT) {
+        x -= GAP;
+    }
+    x /= cell_width;
+    y /= cell_height;
+    return (scroll_bar.value() + y) * BYTES_PER_LINE + x;
+}
+
+void HexWidget::mousePressEvent(QMouseEvent *event)
+{
+    // We only care about left clicks for now
+    if (event->button() != Qt::MouseButton::LeftButton)
+        return;
+
+    // Move to the click offset
+    gotoOffset(translateGuiCoords(event->x(), event->y()));
+}
+
+void HexWidget::mouseMoveEvent(QMouseEvent *event)
+{
+    if (event->x() >= grid_x
+            && event->x() < grid_x + BYTES_PER_LINE * cell_width + GAP
+            && event->y() >= grid_y) {
+        setCursor(Qt::CursorShape::IBeamCursor);
+    } else {
+        setCursor(Qt::CursorShape::ArrowCursor);
+    }
 }
 
 void HexWidget::keyPressEvent(QKeyEvent *event)
@@ -162,14 +206,16 @@ void HexWidget::paintEvent(QPaintEvent *)
     int ascii_start = x + BIGGAP;
     QString ascii_heading("ASCII");
     painter.drawText(ascii_start, y, ascii_heading);
+    y += GAP; // Leave extra gap after the heading
 
-    // First line of the hexdump
-    x = BIGGAP;
-    y += font_metrics.height() + GAP;
+    // Compute cursor translation values
+    grid_x = byte_start - GAP;
+    grid_y = y + GAP;
+    cell_width = font_metrics.width("00") + GAP;
+    cell_height = font_metrics.height();
 
-    // Start reading bytes from the correct offset
+    // Draw file contents
     file.seek(scroll_bar.value() * BYTES_PER_LINE);
-
     for (int line_idx = 0; line_idx < displayedLines(); ++line_idx) {
         // Read data
         auto hexline_offs = file.pos();
@@ -180,25 +226,37 @@ void HexWidget::paintEvent(QPaintEvent *)
         // Draw offset
         auto offs_str = QString::asprintf("%08llx", hexline_offs);
         painter.setPen(BLUE);
+        x = BIGGAP;
+        y += font_metrics.height();
         painter.drawText(x, y, offs_str);
         painter.setPen(BLACK);
 
         // Draw hex bytes
         x = byte_start;
+
         for (int col_idx = 0; col_idx < hexline.size(); ++col_idx) {
+            qint64 cell_offs = hexline_offs + col_idx;
+            bool is_selected = selection.inRange(cell_offs);
+
             // Draw cursor
-            if (cursor_offs == hexline_offs + col_idx) {
+            if (cursor_offs == cell_offs) {
                 painter.fillRect(x, y + 4, -2, -font_metrics.capHeight() - 8, BLACK);
             }
 
-            // Draw byte
+            // The byte as a string
             auto bstr = QString::asprintf("%02X", static_cast<unsigned char>(hexline.at(col_idx)));
-            painter.drawText(x, y, bstr);
-            x += font_metrics.width(bstr);
-            if (col_idx == SPLITAT - 1) {
-                x += BIGGAP;
+
+            int bstr_x = x;
+            x += font_metrics.width(bstr) + (col_idx == SPLITAT - 1 ? BIGGAP : GAP);
+
+            // Draw byte
+            if (is_selected) {
+                painter.fillRect(bstr_x, y + 4, x - bstr_x, -font_metrics.height(), BLUE);
+                painter.setPen(WHITE);
+                painter.drawText(bstr_x, y, bstr);
+                painter.setPen(BLACK);
             } else {
-                x += GAP;
+                painter.drawText(bstr_x, y, bstr);
             }
         }
 
@@ -214,10 +272,10 @@ void HexWidget::paintEvent(QPaintEvent *)
             }
         }
         painter.drawText(ascii_start, y, asciiLine);
+    }
 
-
-        // Move to next line
-        x = BIGGAP;
-        y += font_metrics.height();
+    // Special case for cursor after the last bytes
+    if (cursor_offs == file.size()) {
+        painter.fillRect(x, y + 4, 2, -font_metrics.capHeight() - 8, BLACK);
     }
 }
