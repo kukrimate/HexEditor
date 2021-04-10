@@ -15,6 +15,8 @@ static QColor BLACK(0, 0, 0);
 static QColor BLUE(0, 70, 255);
 static QColor GRAY(119, 119, 119);
 
+#define REM_MASK(x) ((x) - 1)
+
 HexWidget::HexWidget(QString fileName, QWidget *parent)
     : QWidget(parent),
       scroll_bar(this),
@@ -30,12 +32,10 @@ HexWidget::HexWidget(QString fileName, QWidget *parent)
     }
 
     // Calculate the number of lines for our file
-    total_lines = (file.size() + BYTES_PER_LINE - 1) / BYTES_PER_LINE;
-    displayed_lines = (this->height() - 30) / font_metrics.height();
+    qint64 total_lines = (file.size() + BYTES_PER_LINE - 1) / BYTES_PER_LINE;
 
     // Set cursor position
-    cursor_line = 0;
-    cursor_col = 0;
+    cursor_offs = 0;;
 
     // Setup scrollbar
     if (total_lines > INT_MAX) {
@@ -59,29 +59,36 @@ qint64 HexWidget::fileSize()
 
 void HexWidget::gotoOffset(qint64 offset)
 {
-    scroll_bar.setValue(static_cast<int>(offset / BYTES_PER_LINE));
+    if (offset < 0 || offset >= file.size())
+        return;
+
+    // Update cursor offset
+    qint64 prev_cursor_offs = cursor_offs;
+    cursor_offs = offset;
+
+    if (!isOnScreen(prev_cursor_offs)) {
+        // Cursor was not on screen -> just put the exact line on the
+        // top of the screen
+        scroll_bar.setValue(static_cast<int>(offset / BYTES_PER_LINE));
+    } else if (!isOnScreen(cursor_offs)) {
+        // If the new cursor is not on screen, we know the exact number of
+        // lines we need to move the screen
+        scroll_bar.setValue(scroll_bar.value() + static_cast<int>(cursor_offs - prev_cursor_offs) / BYTES_PER_LINE);
+    }
+
     repaint();
 }
 
-void HexWidget::moveCursorLines(qint64 lines)
+qint64 HexWidget::displayedLines()
 {
-    // Change cursor position
-    cursor_line += lines;
-    if (cursor_line < 0)
-        cursor_line = 0;
-    if (cursor_line >= total_lines)
-        cursor_line = total_lines - 1;
+    return (this->height() - 30) / font_metrics.height();
+}
 
-    // Scroll if neeeded
-    if (cursor_line < scroll_bar.value() || cursor_line >= scroll_bar.value() + displayed_lines) {
-        scroll_bar.setValue(static_cast<int>(scroll_bar.value() + lines));
-    }
-    // If it's still outside the range, we just jump there
-    if (cursor_line < scroll_bar.value() || cursor_line >= scroll_bar.value() + displayed_lines) {
-        scroll_bar.setValue(static_cast<int>(cursor_line));
-    }
-
-    repaint();
+bool HexWidget::isOnScreen(qint64 offset)
+{
+    qint64 screen_offs = scroll_bar.value() * BYTES_PER_LINE;
+    qint64 screen_end = screen_offs + displayedLines() * BYTES_PER_LINE;
+    return offset >= screen_offs && offset < screen_end;
 }
 
 void HexWidget::keyPressEvent(QKeyEvent *event)
@@ -89,40 +96,28 @@ void HexWidget::keyPressEvent(QKeyEvent *event)
     QKeyEvent *key_event = reinterpret_cast<QKeyEvent*>(event);
     switch (key_event->key()) {
     case Qt::Key_Up:
-        moveCursorLines(-1);
+        gotoOffset(cursor_offs - BYTES_PER_LINE);
         break;
     case Qt::Key_Down:
-        moveCursorLines(1);
+        gotoOffset(cursor_offs + BYTES_PER_LINE);
         break;
     case Qt::Key_Left:
-        if (--cursor_col < 0) {
-            cursor_col = BYTES_PER_LINE - 1;
-            moveCursorLines(-1);
-        } else {
-            repaint();
-        }
+        gotoOffset(cursor_offs - 1);
         break;
     case Qt::Key_Right:
-        if (++cursor_col >= BYTES_PER_LINE) {
-            cursor_col = 0;
-            moveCursorLines(1);
-        } else {
-            repaint();
-        }
+        gotoOffset(cursor_offs + 1);
         break;
     case Qt::Key_PageUp:
-        moveCursorLines(-displayed_lines);
+        gotoOffset(cursor_offs - BYTES_PER_LINE * displayedLines());
         break;
     case Qt::Key_PageDown:
-        moveCursorLines(displayed_lines);
+        gotoOffset(cursor_offs + BYTES_PER_LINE * displayedLines());
         break;
     case Qt::Key_Home:
-        cursor_col = 0;
-        repaint();
+        gotoOffset(cursor_offs & ~REM_MASK(BYTES_PER_LINE));
         break;
     case Qt::Key_End:
-        cursor_col = BYTES_PER_LINE - 1;
-        repaint();
+        gotoOffset((cursor_offs & ~REM_MASK(BYTES_PER_LINE)) + BYTES_PER_LINE - 1);
         break;
     }
 }
@@ -134,8 +129,6 @@ void HexWidget::wheelEvent(QWheelEvent *event)
 
 void HexWidget::resizeEvent(QResizeEvent *)
 {
-    // Update line count
-    displayed_lines = (this->height() - 30) / font_metrics.height();
     // Resize scrollbar
     scroll_bar.setGeometry(this->width() - scroll_bar.width(), 0, scroll_bar.width(), this->height());
 }
@@ -177,14 +170,15 @@ void HexWidget::paintEvent(QPaintEvent *)
     // Start reading bytes from the correct offset
     file.seek(scroll_bar.value() * BYTES_PER_LINE);
 
-    for (int line_idx = 0; line_idx < displayed_lines; ++line_idx) {
+    for (int line_idx = 0; line_idx < displayedLines(); ++line_idx) {
         // Read data
+        auto hexline_offs = file.pos();
         auto hexline = file.read(BYTES_PER_LINE);
         if (hexline.size() == 0)
             break;
 
         // Draw offset
-        auto offs_str = QString::asprintf("%08llx", file.pos() - hexline.size());
+        auto offs_str = QString::asprintf("%08llx", hexline_offs);
         painter.setPen(BLUE);
         painter.drawText(x, y, offs_str);
         painter.setPen(BLACK);
@@ -193,7 +187,7 @@ void HexWidget::paintEvent(QPaintEvent *)
         x = byte_start;
         for (int col_idx = 0; col_idx < hexline.size(); ++col_idx) {
             // Draw cursor
-            if (cursor_line == scroll_bar.value() + line_idx && cursor_col == col_idx) {
+            if (cursor_offs == hexline_offs + col_idx) {
                 painter.fillRect(x, y + 4, -2, -font_metrics.capHeight() - 8, BLACK);
             }
 

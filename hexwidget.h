@@ -13,20 +13,26 @@ private:
 
     // Underlying file
     QFile file;
-    // Number of lines it takes to display our file
-    qint64 total_lines;
 
     // For rendering fonts
     QFont font;
     QFontMetrics font_metrics;
 
-    // Current number of lines that can fit on screen
-    qint64 displayed_lines;
-
     // Cursor position
-    qint64 cursor_line, cursor_col;
+    qint64 cursor_offs;
 
-    void moveCursorLines(qint64 lines);
+    /**
+     * @brief displayedLines Current number of displayed lines
+     * @return count
+     */
+    qint64 displayedLines();
+
+    /**
+     * @brief isOnScreen Check if an offset is currently on screen
+     * @param offset offset
+     * @return is it on screen?
+     */
+    bool isOnScreen(qint64 offset);
 
 public:
     explicit HexWidget(QString fileName, QWidget *parent = nullptr);
