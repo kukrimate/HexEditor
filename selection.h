@@ -14,6 +14,7 @@ public:
 
     qint64 begin();
     qint64 end();
+    bool valid();
     bool inRange(qint64 val);
     void setPivot(qint64 val);
     void extend(qint64 val);

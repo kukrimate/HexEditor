@@ -12,6 +12,11 @@ qint64 Selection::end()
     return pivot > bound ? pivot : bound;
 }
 
+bool Selection::valid()
+{
+    return begin() != end();
+}
+
 bool Selection::inRange(qint64 val)
 {
     return val >= begin() && val < end();

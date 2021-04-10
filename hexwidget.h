@@ -27,25 +27,13 @@ private:
     int grid_x, grid_y;
     int cell_width, cell_height;
 
-    /**
-     * @brief displayedLines Current number of displayed lines
-     * @return count
-     */
+    // Current number of displayed lines
     qint64 displayedLines();
 
-    /**
-     * @brief isOnScreen Check if an offset is currently on screen
-     * @param offset offset
-     * @return is it on screen?
-     */
+    // Check if offset is currently on screen
     bool isOnScreen(qint64 offset);
 
-    /**
-     * @brief translateGuiCoords Translate on-GUI coordinates into an offset
-     * @param x x-coord
-     * @param y y-coord
-     * @return file offset
-     */
+    // Translate on-GUI coordinates into an offset into file
     qint64 translateGuiCoords(int x, int y);
 
 public:
@@ -53,7 +41,7 @@ public:
     ~HexWidget() override;
 
     qint64 fileSize();
-    void gotoOffset(qint64 offset);
+    void gotoOffset(qint64 offset, bool extend=false);
 
     virtual void mousePressEvent(QMouseEvent *) override;
     virtual void mouseMoveEvent(QMouseEvent *) override;

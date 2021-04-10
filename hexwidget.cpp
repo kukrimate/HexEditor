@@ -56,7 +56,7 @@ qint64 HexWidget::fileSize()
     return file.size();
 }
 
-void HexWidget::gotoOffset(qint64 offset)
+void HexWidget::gotoOffset(qint64 offset, bool extend)
 {
     if (offset < 0 || offset > file.size())
         return;
@@ -78,7 +78,7 @@ void HexWidget::gotoOffset(qint64 offset)
         }
     }
 
-    if (QApplication::keyboardModifiers() == Qt::KeyboardModifier::ShiftModifier) {
+    if (extend || QApplication::keyboardModifiers() == Qt::KeyboardModifier::ShiftModifier) {
         selection.extend(cursor_offs);
     } else {
         selection.setPivot(cursor_offs);
@@ -103,7 +103,7 @@ qint64 HexWidget::translateGuiCoords(int gui_x, int gui_y)
 {
     // Outside the hex grid
     if (gui_x < grid_x || gui_y < grid_y || gui_x >= grid_x + BYTES_PER_LINE * cell_width + GAP)
-        return - 1;
+        return -1;
 
     int x = gui_x - grid_x, y = gui_y - grid_y;
     if (x / cell_width > SPLITAT) {
@@ -132,6 +132,10 @@ void HexWidget::mouseMoveEvent(QMouseEvent *event)
         setCursor(Qt::CursorShape::IBeamCursor);
     } else {
         setCursor(Qt::CursorShape::ArrowCursor);
+    }
+
+    if (event->buttons() == Qt::MouseButton::LeftButton) {
+        gotoOffset(translateGuiCoords(event->x(), event->y()), true);
     }
 }
 
@@ -214,6 +218,8 @@ void HexWidget::paintEvent(QPaintEvent *)
     cell_width = font_metrics.width("00") + GAP;
     cell_height = font_metrics.height();
 
+    bool drew_cursor = false;
+
     // Draw file contents
     file.seek(scroll_bar.value() * BYTES_PER_LINE);
     for (int line_idx = 0; line_idx < displayedLines(); ++line_idx) {
@@ -238,20 +244,41 @@ void HexWidget::paintEvent(QPaintEvent *)
             qint64 cell_offs = hexline_offs + col_idx;
             bool is_selected = selection.inRange(cell_offs);
 
-            // Draw cursor
-            if (cursor_offs == cell_offs) {
-                painter.fillRect(x, y + 4, -2, -font_metrics.capHeight() - 8, BLACK);
-            }
-
             // The byte as a string
             auto bstr = QString::asprintf("%02X", static_cast<unsigned char>(hexline.at(col_idx)));
 
-            int bstr_x = x;
-            x += font_metrics.width(bstr) + (col_idx == SPLITAT - 1 ? BIGGAP : GAP);
+            // Byte value x
+            auto bstr_x = x;
+            x += font_metrics.width(bstr);
+            auto bstr_end_x = x;
+
+            // Draw cursor
+            if (!drew_cursor) {
+                if (selection.valid() && selection.end() == cell_offs + 1) {
+                    if (cursor_offs == cell_offs + 1) {
+                        painter.fillRect(x, y + 4, 2, -font_metrics.capHeight() - 8, BLACK);
+                        drew_cursor = true;
+                    }
+                } else {
+                    if (cursor_offs == cell_offs) {
+                        painter.fillRect(bstr_x, y + 4, -2, -font_metrics.capHeight() - 8, BLACK);
+                        drew_cursor = true;
+                    }
+                }
+            }
+
+            // Add gap width if this is not the last column
+            if (col_idx != hexline.size() - 1) {
+                x += (col_idx == SPLITAT - 1 ? BIGGAP : GAP);
+            }
 
             // Draw byte
             if (is_selected) {
-                painter.fillRect(bstr_x, y + 4, x - bstr_x, -font_metrics.height(), BLUE);
+                int sel_width = x - bstr_x;
+                if (cell_offs == selection.end() - 1) {
+                    sel_width = bstr_end_x - bstr_x;
+                }
+                painter.fillRect(bstr_x, y + 4, sel_width, -font_metrics.height(), BLUE);
                 painter.setPen(WHITE);
                 painter.drawText(bstr_x, y, bstr);
                 painter.setPen(BLACK);
