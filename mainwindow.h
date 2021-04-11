@@ -1,12 +1,12 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QAction>
 #include <QMainWindow>
+#include <QMenuBar>
+#include <QVBoxLayout>
+#include <QTabWidget>
 #include "gotodialog.h"
-
-namespace Ui {
-class MainWindow;
-}
 
 class MainWindow : public QMainWindow
 {
@@ -14,11 +14,35 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
-    ~MainWindow() override;
 
 private:
-    Ui::MainWindow *ui;
+    // Menu bar
+    QAction action_open;
+    QAction action_save;
+    QAction action_save_as;
+    QAction action_quit;
+    QMenu file_menu;
+
+    QAction action_copy;
+    QAction action_cut;
+    QAction action_paste;
+    QMenu edit_menu;
+
+    QAction action_goto;
+    QMenu find_menu;
+
+    QMenuBar menu_bar;
+
+
+    // Central widget
+    QWidget central_widget;
+    QVBoxLayout central_widget_layout;
+    QTabWidget editor_tabs;
+
+    // Dialogs
     GotoDialog gotoDialog;
+
+    // Methods
     virtual bool eventFilter(QObject *, QEvent *) override;
 
 private slots:

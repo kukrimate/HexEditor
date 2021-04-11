@@ -1,6 +1,6 @@
 #include "mainwindow.h"
-#include "ui_mainwindow.h"
 #include "hexwidget.h"
+#include <QApplication>
 #include <QDesktopWidget>
 #include <QDebug>
 #include <QFileDialog>
@@ -12,19 +12,67 @@
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::MainWindow),
+    action_open("&Open"),
+    action_save("&Save"),
+    action_save_as("S&ave As"),
+    action_quit("&Quit"),
+    file_menu("&File"),
+    action_copy("&Copy"),
+    action_cut("C&ut"),
+    action_paste("&Paste"),
+    edit_menu("&Edit"),
+    action_goto("&Goto offset"),
+    find_menu("Fi&nd"),
+    menu_bar(this),
+    central_widget(this),
+    editor_tabs(&central_widget),
     gotoDialog(this)
 {
-    ui->setupUi(this);
+    action_open.setShortcut(QKeySequence("Ctrl+O"));
+    file_menu.addAction(&action_open);
+    action_save.setShortcut(QKeySequence("Ctrl+S"));
+    file_menu.addAction(&action_save);
+    file_menu.addAction(&action_save_as);
+    file_menu.addSeparator();
+    action_quit.setShortcut(QKeySequence("Ctrl+Q"));
+    file_menu.addAction(&action_quit);
+    menu_bar.addMenu(&file_menu);
+
+    action_copy.setShortcut(QKeySequence("Ctrl+C"));
+    edit_menu.addAction(&action_copy);
+    action_cut.setShortcut(QKeySequence("Ctrl+X"));
+    edit_menu.addAction(&action_cut);
+    action_paste.setShortcut(QKeySequence("Ctrl+V"));
+    edit_menu.addAction(&action_paste);
+    menu_bar.addMenu(&edit_menu);
+
+    action_goto.setShortcut(QKeySequence("Ctrl+G"));
+    find_menu.addAction(&action_goto);
+    menu_bar.addMenu(&find_menu);
+
+    setMenuBar(&menu_bar);
+
+    editor_tabs.setTabsClosable(true);
+    editor_tabs.setMovable(true);
+    central_widget_layout.addWidget(&editor_tabs);
+    central_widget_layout.setMargin(0);
+    central_widget.setLayout(&central_widget_layout);
+    setCentralWidget(&central_widget);
+    setWindowTitle(tr("HexEditor"));
+    resize(800, 600);
+
+    // Hook up event handlers
+    QObject::connect(&action_open, SIGNAL(triggered(bool)), this, SLOT(handleOpen()));
+    QObject::connect(&action_quit, SIGNAL(triggered(bool)), this, SLOT(close()));
+    QObject::connect(&action_goto, SIGNAL(triggered(bool)), this, SLOT(handleGoto()));
+    QObject::connect(&editor_tabs, SIGNAL(currentChanged(int)), this, SLOT(handleTabChange()));
+    QObject::connect(&editor_tabs, SIGNAL(tabCloseRequested(int)), this, SLOT(handleTabClose()));
     qApp->installEventFilter(this);
 
+
+    // For testing
     move(QApplication::screens().at(0)->geometry().center() - rect().center());
     this->setWindowFlag(Qt::WindowType::Dialog);
-}
-
-MainWindow::~MainWindow()
-{
-    delete ui;
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *in_event)
@@ -52,8 +100,8 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *in_event)
             case Qt::Key_8: idx = 8; break;
             case Qt::Key_9: idx = 9; break;
             }
-            if (idx > 0 && idx <= ui->editorTabs->count()) {
-                ui->editorTabs->setCurrentIndex(idx - 1);
+            if (idx > 0 && idx <= editor_tabs.count()) {
+                editor_tabs.setCurrentIndex(idx - 1);
                 return 1;
             }
         }
@@ -69,8 +117,8 @@ void MainWindow::handleOpen()
 
     try {
         auto editor = new HexWidget(fileName);
-        int newIdx = ui->editorTabs->addTab(editor, QFileInfo(fileName).fileName());
-        ui->editorTabs->setCurrentIndex(newIdx);
+        int newIdx = editor_tabs.addTab(editor, QFileInfo(fileName).fileName());
+        editor_tabs.setCurrentIndex(newIdx);
     } catch (QString err) {
         QMessageBox msgBox(this);
         msgBox.setText(err);
@@ -81,7 +129,7 @@ void MainWindow::handleOpen()
 
 void MainWindow::handleTabChange()
 {
-    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(ui->editorTabs->currentWidget());
+    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(editor_tabs.currentWidget());
     if (hex_widget) {
         hex_widget->setFocus(Qt::FocusReason::NoFocusReason);
     }
@@ -89,7 +137,7 @@ void MainWindow::handleTabChange()
 
 void MainWindow::handleTabClose()
 {
-    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(ui->editorTabs->currentWidget());
+    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(editor_tabs.currentWidget());
     if (hex_widget) {
         delete hex_widget;
     }
@@ -97,7 +145,7 @@ void MainWindow::handleTabClose()
 
 void MainWindow::handleGoto()
 {
-    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(ui->editorTabs->currentWidget());
+    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(editor_tabs.currentWidget());
     if (hex_widget) {
         gotoDialog.setFileSize(hex_widget->fileSize());
         if (gotoDialog.exec() == QDialog::Accepted) {
