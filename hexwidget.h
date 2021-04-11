@@ -6,6 +6,12 @@
 #include <QFile>
 #include "selection.h"
 
+enum CursorDeflect {
+    ForceLeft   = 0,
+    ForceRight  = 1,
+    PreserveEol = 2,
+};
+
 class HexWidget : public QWidget
 {
     Q_OBJECT
@@ -20,8 +26,8 @@ private:
     QFont font;
     QFontMetrics font_metrics;
 
-    // Cursor position
-    qint64 cursor_offs;
+    // Cursor position (twice the granularity of file offsets)
+    qint64 cursor_pos;
 
     // Grid translation offsets
     int grid_x, grid_y;
@@ -31,17 +37,20 @@ private:
     qint64 displayedLines();
 
     // Check if offset is currently on screen
-    bool isOnScreen(qint64 offset);
+    bool isPosOnScreen(qint64 offset);
 
     // Translate on-GUI coordinates into an offset into file
-    qint64 translateGuiCoords(int x, int y);
+    qint64 translateGuiCoords(int x, int y, CursorDeflect &deflect);
 
 public:
     explicit HexWidget(QString fileName, QWidget *parent = nullptr);
     ~HexWidget() override;
 
     qint64 fileSize();
-    void gotoOffset(qint64 offset, bool extend=false);
+
+    void cursorToOffset(qint64 offset,
+                        CursorDeflect deflect,
+                        bool extend_selection=false);
 
     virtual void mousePressEvent(QMouseEvent *) override;
     virtual void mouseMoveEvent(QMouseEvent *) override;

@@ -12,6 +12,7 @@ class Selection
 public:
     Selection();
 
+    qint64 pivotVal();
     qint64 begin();
     qint64 end();
     bool valid();

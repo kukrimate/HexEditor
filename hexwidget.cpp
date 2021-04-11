@@ -16,7 +16,7 @@ static QColor WHITE(255, 255, 255);
 static QColor BLUE(0, 70, 255);
 static QColor GRAY(119, 119, 119);
 
-#define REM_MASK(x) ((x) - 1)
+#define BPL_MASK (BYTES_PER_LINE - 1)
 
 HexWidget::HexWidget(QString fileName, QWidget *parent)
     : QWidget(parent),
@@ -24,7 +24,7 @@ HexWidget::HexWidget(QString fileName, QWidget *parent)
       file(fileName),
       font("DejaVu Sans Mono", FONT_SIZE),
       font_metrics(font),
-      cursor_offs(0)
+      cursor_pos(0)
 {
     setFocusPolicy(Qt::StrongFocus);
 
@@ -56,32 +56,48 @@ qint64 HexWidget::fileSize()
     return file.size();
 }
 
-void HexWidget::gotoOffset(qint64 offset, bool extend)
+void HexWidget::cursorToOffset(qint64 offset, CursorDeflect deflect, bool extend)
 {
-    if (offset < 0 || offset > file.size())
+    // End of file is special
+    if (offset == file.size()) {
+        --offset;
+        deflect = CursorDeflect::ForceRight;
+    }
+
+    // Check for invalid offset
+    if (offset < 0 || offset >= file.size())
         return;
 
-    // Update cursor offset
-    qint64 prev_cursor_offs = cursor_offs;
-    cursor_offs = offset;
+    qint64 prev_cursor_pos = cursor_pos;
+    // Calculate new cursor position
+    if ((offset & BPL_MASK) == BPL_MASK) {
+        if (deflect == CursorDeflect::PreserveEol) {
+            deflect = prev_cursor_pos % 2 == 0
+                ? CursorDeflect::ForceLeft
+                : CursorDeflect::ForceRight;
+        }
+    }
+    cursor_pos = offset * 2 + deflect;
 
-    if (!isOnScreen(cursor_offs)) {
-        if (!isOnScreen(prev_cursor_offs)) {
+    if (!isPosOnScreen(cursor_pos)) {
+        if (!isPosOnScreen(prev_cursor_pos)) {
             // Cursor was not on screen -> just put the exact line on the
             // top of the screen
             scroll_bar.setValue(static_cast<int>(offset / BYTES_PER_LINE));
         } else {
             // If the new cursor is not on screen, we know the exact number of
             // lines we need to move the screen
-            auto delta = static_cast<int>(cursor_offs / BYTES_PER_LINE - prev_cursor_offs / BYTES_PER_LINE);
+            auto delta = static_cast<int>(cursor_pos / 2 / BYTES_PER_LINE
+                                          - prev_cursor_pos / 2 / BYTES_PER_LINE);
             scroll_bar.setValue(scroll_bar.value() + delta);
         }
     }
 
+    // Update selection accordingly
     if (extend || QApplication::keyboardModifiers() == Qt::KeyboardModifier::ShiftModifier) {
-        selection.extend(cursor_offs);
+        selection.extend(cursor_pos / 2 + cursor_pos % 2);
     } else {
-        selection.setPivot(cursor_offs);
+        selection.setPivot(cursor_pos / 2 + cursor_pos % 2);
     }
 
     repaint();
@@ -92,17 +108,24 @@ qint64 HexWidget::displayedLines()
     return (this->height() - 30) / font_metrics.height();
 }
 
-bool HexWidget::isOnScreen(qint64 offset)
+bool HexWidget::isPosOnScreen(qint64 pos)
 {
+    qint64 offs = pos / 2;
+
     qint64 screen_offs = scroll_bar.value() * BYTES_PER_LINE;
     qint64 screen_end = screen_offs + displayedLines() * BYTES_PER_LINE;
-    return offset >= screen_offs && offset < screen_end;
+
+    if (pos % 2) {
+        return offs >= screen_offs && offs <= screen_end;
+    } else {
+        return offs >= screen_offs && offs < screen_end;
+    }
 }
 
-qint64 HexWidget::translateGuiCoords(int gui_x, int gui_y)
+qint64 HexWidget::translateGuiCoords(int gui_x, int gui_y, CursorDeflect &deflect)
 {
     // Outside the hex grid
-    if (gui_x < grid_x || gui_y < grid_y || gui_x >= grid_x + BYTES_PER_LINE * cell_width + GAP)
+    if (gui_x < grid_x || gui_y < grid_y || gui_x >= grid_x + BYTES_PER_LINE * cell_width + 2 * GAP)
         return -1;
 
     int x = gui_x - grid_x, y = gui_y - grid_y;
@@ -110,6 +133,12 @@ qint64 HexWidget::translateGuiCoords(int gui_x, int gui_y)
         x -= GAP;
     }
     x /= cell_width;
+    if (x % cell_width > 0 && x == BYTES_PER_LINE) {
+        deflect = CursorDeflect::ForceRight;
+        --x;
+    } else {
+        deflect = CursorDeflect::ForceLeft;
+    }
     y /= cell_height;
     return (scroll_bar.value() + y) * BYTES_PER_LINE + x;
 }
@@ -121,13 +150,15 @@ void HexWidget::mousePressEvent(QMouseEvent *event)
         return;
 
     // Move to the click offset
-    gotoOffset(translateGuiCoords(event->x(), event->y()));
+    CursorDeflect deflect;
+    qint64 off = translateGuiCoords(event->x(), event->y(), deflect);
+    cursorToOffset(off, deflect);
 }
 
 void HexWidget::mouseMoveEvent(QMouseEvent *event)
 {
     if (event->x() >= grid_x
-            && event->x() < grid_x + BYTES_PER_LINE * cell_width + GAP
+            && event->x() < grid_x + BYTES_PER_LINE * cell_width + 2 * GAP
             && event->y() >= grid_y) {
         setCursor(Qt::CursorShape::IBeamCursor);
     } else {
@@ -135,7 +166,12 @@ void HexWidget::mouseMoveEvent(QMouseEvent *event)
     }
 
     if (event->buttons() == Qt::MouseButton::LeftButton) {
-        gotoOffset(translateGuiCoords(event->x(), event->y()), true);
+        CursorDeflect deflect;
+        qint64 off = translateGuiCoords(event->x(), event->y(), deflect);
+        if (off > selection.pivotVal()) {
+            deflect = CursorDeflect::ForceRight;
+        }
+        cursorToOffset(off, deflect, true);
     }
 }
 
@@ -144,28 +180,28 @@ void HexWidget::keyPressEvent(QKeyEvent *event)
     QKeyEvent *key_event = reinterpret_cast<QKeyEvent*>(event);
     switch (key_event->key()) {
     case Qt::Key_Up:
-        gotoOffset(cursor_offs - BYTES_PER_LINE);
+        cursorToOffset(cursor_pos / 2 - BYTES_PER_LINE, CursorDeflect::PreserveEol);
         break;
     case Qt::Key_Down:
-        gotoOffset(cursor_offs + BYTES_PER_LINE);
-        break;
-    case Qt::Key_Left:
-        gotoOffset(cursor_offs - 1);
-        break;
-    case Qt::Key_Right:
-        gotoOffset(cursor_offs + 1);
+        cursorToOffset(cursor_pos / 2 + BYTES_PER_LINE, CursorDeflect::PreserveEol);
         break;
     case Qt::Key_PageUp:
-        gotoOffset(cursor_offs - BYTES_PER_LINE * displayedLines());
+        cursorToOffset(cursor_pos / 2 - BYTES_PER_LINE * displayedLines(), CursorDeflect::PreserveEol);
         break;
     case Qt::Key_PageDown:
-        gotoOffset(cursor_offs + BYTES_PER_LINE * displayedLines());
+        cursorToOffset(cursor_pos / 2 + BYTES_PER_LINE * displayedLines(), CursorDeflect::PreserveEol);
+        break;
+    case Qt::Key_Left:
+        cursorToOffset((cursor_pos - 1) / 2, CursorDeflect::ForceLeft);
+        break;
+    case Qt::Key_Right:
+        cursorToOffset((cursor_pos + 2) / 2, CursorDeflect::ForceLeft);
         break;
     case Qt::Key_Home:
-        gotoOffset(cursor_offs & ~REM_MASK(BYTES_PER_LINE));
+        cursorToOffset((cursor_pos / 2) & ~BPL_MASK, CursorDeflect::ForceLeft);
         break;
     case Qt::Key_End:
-        gotoOffset((cursor_offs & ~REM_MASK(BYTES_PER_LINE)) + BYTES_PER_LINE - 1);
+        cursorToOffset((cursor_pos / 2) | BPL_MASK, CursorDeflect::ForceRight);
         break;
     }
 }
@@ -218,8 +254,6 @@ void HexWidget::paintEvent(QPaintEvent *)
     cell_width = font_metrics.width("00") + GAP;
     cell_height = font_metrics.height();
 
-    bool drew_cursor = false;
-
     // Draw file contents
     file.seek(scroll_bar.value() * BYTES_PER_LINE);
     for (int line_idx = 0; line_idx < displayedLines(); ++line_idx) {
@@ -242,7 +276,6 @@ void HexWidget::paintEvent(QPaintEvent *)
 
         for (int col_idx = 0; col_idx < hexline.size(); ++col_idx) {
             qint64 cell_offs = hexline_offs + col_idx;
-            bool is_selected = selection.inRange(cell_offs);
 
             // The byte as a string
             auto bstr = QString::asprintf("%02X", static_cast<unsigned char>(hexline.at(col_idx)));
@@ -253,19 +286,14 @@ void HexWidget::paintEvent(QPaintEvent *)
             auto bstr_end_x = x;
 
             // Draw cursor
-            if (!drew_cursor) {
-                if (selection.valid() && selection.end() == cell_offs + 1) {
-                    if (cursor_offs == cell_offs + 1) {
-                        painter.fillRect(x, y + 4, 2, -font_metrics.capHeight() - 8, BLACK);
-                        drew_cursor = true;
-                    }
+            if (cursor_pos / 2 == cell_offs) {
+                if (cursor_pos % 2) {
+                    painter.fillRect(x, y + 4, 2, -font_metrics.capHeight() - 8, BLACK);
                 } else {
-                    if (cursor_offs == cell_offs) {
-                        painter.fillRect(bstr_x, y + 4, -2, -font_metrics.capHeight() - 8, BLACK);
-                        drew_cursor = true;
-                    }
+                    painter.fillRect(bstr_x, y + 4, -2, -font_metrics.capHeight() - 8, BLACK);
                 }
             }
+
 
             // Add gap width if this is not the last column
             if (col_idx != hexline.size() - 1) {
@@ -273,7 +301,7 @@ void HexWidget::paintEvent(QPaintEvent *)
             }
 
             // Draw byte
-            if (is_selected) {
+            if (selection.inRange(cell_offs)) {
                 int sel_width = x - bstr_x;
                 if (cell_offs == selection.end() - 1) {
                     sel_width = bstr_end_x - bstr_x;
@@ -299,10 +327,5 @@ void HexWidget::paintEvent(QPaintEvent *)
             }
         }
         painter.drawText(ascii_start, y, asciiLine);
-    }
-
-    // Special case for cursor after the last bytes
-    if (cursor_offs == file.size()) {
-        painter.fillRect(x, y + 4, 2, -font_metrics.capHeight() - 8, BLACK);
     }
 }

@@ -2,6 +2,11 @@
 
 Selection::Selection() : pivot(0), bound(0) {}
 
+qint64 Selection::pivotVal()
+{
+    return pivot;
+}
+
 qint64 Selection::begin()
 {
     return pivot < bound ? pivot : bound;
