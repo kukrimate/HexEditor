@@ -149,7 +149,7 @@ void MainWindow::handleGoto()
     if (hex_widget) {
         gotoDialog.setFileSize(hex_widget->fileSize());
         if (gotoDialog.exec() == QDialog::Accepted) {
-            hex_widget->cursorToOffset(gotoDialog.getEnteredOffset(), CursorDeflect::ForceLeft);
+            hex_widget->cursorToOffset(gotoDialog.getEnteredOffset(), CursorDeflect::NoDeflect);
         }
     }
 }

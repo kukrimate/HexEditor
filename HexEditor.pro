@@ -28,14 +28,12 @@ SOURCES += \
         main.cpp \
         mainwindow.cpp \
     hexwidget.cpp \
-    gotodialog.cpp \
-    selection.cpp
+    gotodialog.cpp
 
 HEADERS += \
         mainwindow.h \
     hexwidget.h \
-    gotodialog.h \
-    selection.h
+    gotodialog.h
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

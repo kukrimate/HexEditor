@@ -4,11 +4,29 @@
 #include <QWidget>
 #include <QScrollBar>
 #include <QFile>
-#include "selection.h"
+
+class Selection
+{
+private:
+    qint64 pivot, bound;
+
+public:
+    Selection() : pivot(0), bound(0) {}
+    qint64 pivotVal() { return pivot; }
+    qint64 begin() { return pivot < bound ? pivot : bound; }
+    qint64 end() { return pivot > bound ? pivot : bound; }
+    bool valid() { return begin() != end(); }
+    bool inRange(qint64 val) { return val >= begin() && val < end(); }
+    void setPivot(qint64 val) {
+        pivot = val;
+        bound = val;
+    }
+    void extend(qint64 val) { bound = val; }
+};
 
 enum CursorDeflect {
-    ForceLeft   = 0,
-    ForceRight  = 1,
+    NoDeflect   = 0,
+    ToPrevious  = 1,
     PreserveEol = 2,
 };
 
@@ -26,8 +44,9 @@ private:
     QFont font;
     QFontMetrics font_metrics;
 
-    // Cursor position (twice the granularity of file offsets)
+    // Cursor position
     qint64 cursor_pos;
+    CursorDeflect cursor_deflect;
 
     // Grid translation offsets
     int grid_x, grid_y;
@@ -37,7 +56,7 @@ private:
     qint64 displayedLines();
 
     // Check if offset is currently on screen
-    bool isPosOnScreen(qint64 offset);
+    bool isOnScreen(qint64 offset);
 
     // Translate on-GUI coordinates into an offset into file
     qint64 translateGuiCoords(int x, int y, CursorDeflect &deflect);
