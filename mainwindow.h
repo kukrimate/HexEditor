@@ -26,13 +26,15 @@ private:
     QAction action_copy;
     QAction action_cut;
     QAction action_paste;
+    QAction action_paste_insert;
+    QAction action_copy_offset;
+    QAction action_fill;
     QMenu edit_menu;
 
     QAction action_goto;
     QMenu find_menu;
 
     QMenuBar menu_bar;
-
 
     // Central widget
     QWidget central_widget;
@@ -49,6 +51,7 @@ private slots:
     void handleOpen();
     void handleTabChange();
     void handleTabClose();
+    void handleCopy();
     void handleGoto();
 };
 

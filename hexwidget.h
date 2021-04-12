@@ -4,6 +4,9 @@
 #include <QWidget>
 #include <QScrollBar>
 #include <QFile>
+#include <QMenu>
+#include <optional>
+#include <mutex>
 
 class Selection
 {
@@ -36,9 +39,11 @@ class HexWidget : public QWidget
 private:
     QScrollBar scroll_bar;
     Selection selection;
+    QMenu &context_menu;
 
     // Underlying file
     QFile file;
+    std::mutex file_lock;
 
     // For rendering fonts
     QFont font;
@@ -62,7 +67,7 @@ private:
     qint64 translateGuiCoords(int x, int y, CursorDeflect &deflect);
 
 public:
-    explicit HexWidget(QString fileName, QWidget *parent = nullptr);
+    explicit HexWidget(QString fileName, QMenu &context_menu, QWidget *parent = nullptr);
     ~HexWidget() override;
 
     qint64 fileSize();
@@ -71,6 +76,9 @@ public:
                         CursorDeflect deflect,
                         bool extend_selection=false);
 
+    std::optional<QByteArray> getSelectedBytes();
+
+    virtual void contextMenuEvent(QContextMenuEvent *) override;
     virtual void mousePressEvent(QMouseEvent *) override;
     virtual void mouseMoveEvent(QMouseEvent *) override;
     virtual void keyPressEvent(QKeyEvent *) override;

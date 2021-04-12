@@ -5,6 +5,7 @@
 #include <QPainter>
 #include <QStyle>
 #include <QKeyEvent>
+#include <QKeySequence>
 
 static int    FONT_SIZE = 10;
 static int    BYTES_PER_LINE = 16;
@@ -18,23 +19,20 @@ static QColor GRAY(119, 119, 119);
 
 #define BPL_MASK (BYTES_PER_LINE - 1)
 
-HexWidget::HexWidget(QString fileName, QWidget *parent)
+HexWidget::HexWidget(QString fileName, QMenu &context_menu, QWidget *parent)
     : QWidget(parent),
       scroll_bar(this),
+      context_menu(context_menu),
       file(fileName),
       font("DejaVu Sans Mono", FONT_SIZE),
       font_metrics(font),
       cursor_pos(0),
       cursor_deflect(CursorDeflect::NoDeflect)
 {
-    setFocusPolicy(Qt::StrongFocus);
-
     file.open(QFile::ReadOnly);
     if (file.error() != QFile::FileError::NoError) {
         throw file.errorString();
     }
-
-    setMouseTracking(true);
 
     // Setup scrollbar
     qint64 total_lines = (file.size() + BYTES_PER_LINE - 1) / BYTES_PER_LINE;
@@ -45,6 +43,10 @@ HexWidget::HexWidget(QString fileName, QWidget *parent)
     QObject::connect(&scroll_bar, SIGNAL(valueChanged(int)), this, SLOT(repaint()));
     scroll_bar.setRange(0, static_cast<int>(total_lines - 1));
     scroll_bar.show();
+
+
+    setFocusPolicy(Qt::StrongFocus);
+    setMouseTracking(true);
 }
 
 HexWidget::~HexWidget()
@@ -93,12 +95,27 @@ void HexWidget::cursorToOffset(qint64 offset, CursorDeflect deflect, bool extend
 
     // Update selection accordingly
     if (extend || QApplication::keyboardModifiers() == Qt::KeyboardModifier::ShiftModifier) {
+        if (cursor_pos > selection.pivotVal()) {
+            cursor_deflect = CursorDeflect::ToPrevious;
+        }
         selection.extend(cursor_pos);
     } else {
         selection.setPivot(cursor_pos);
     }
 
     repaint();
+}
+
+std::optional<QByteArray> HexWidget::getSelectedBytes()
+{
+    if (!selection.valid())
+        return {};
+
+    file_lock.lock();
+    file.seek(selection.begin());
+    QByteArray bytes = file.read(selection.end() - selection.begin());
+    file_lock.unlock();
+    return std::optional(bytes);
 }
 
 qint64 HexWidget::displayedLines()
@@ -134,6 +151,11 @@ qint64 HexWidget::translateGuiCoords(int gui_x, int gui_y, CursorDeflect &deflec
     return (scroll_bar.value() + y) * BYTES_PER_LINE + x;
 }
 
+void HexWidget::contextMenuEvent(QContextMenuEvent *event)
+{
+    context_menu.exec(this->mapToGlobal(event->pos()));
+}
+
 void HexWidget::mousePressEvent(QMouseEvent *event)
 {
     // We only care about left clicks for now
@@ -159,9 +181,6 @@ void HexWidget::mouseMoveEvent(QMouseEvent *event)
     if (event->buttons() == Qt::MouseButton::LeftButton) {
         CursorDeflect deflect;
         qint64 off = translateGuiCoords(event->x(), event->y(), deflect);
-        if (off > selection.pivotVal()) {
-            deflect = CursorDeflect::ToPrevious;
-        }
         cursorToOffset(off, deflect, true);
     }
 }
@@ -246,6 +265,7 @@ void HexWidget::paintEvent(QPaintEvent *)
     cell_height = font_metrics.height();
 
     // Draw file contents
+    file_lock.lock();
     file.seek(scroll_bar.value() * BYTES_PER_LINE);
     for (int line_idx = 0; line_idx < displayedLines(); ++line_idx) {
         // Read data
@@ -317,4 +337,5 @@ void HexWidget::paintEvent(QPaintEvent *)
         }
         painter.drawText(ascii_start, y, asciiLine);
     }
+    file_lock.unlock();
 }

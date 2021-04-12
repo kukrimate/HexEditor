@@ -9,6 +9,7 @@
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QScreen>
+#include <QClipboard>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -19,7 +20,10 @@ MainWindow::MainWindow(QWidget *parent) :
     file_menu("&File"),
     action_copy("&Copy"),
     action_cut("C&ut"),
-    action_paste("&Paste"),
+    action_paste("Paste &Write"),
+    action_paste_insert("Paste &Insert"),
+    action_copy_offset("Copy Cursor &Offset"),
+    action_fill("&Fill Selection"),
     edit_menu("&Edit"),
     action_goto("&Goto offset"),
     find_menu("Fi&nd"),
@@ -44,6 +48,11 @@ MainWindow::MainWindow(QWidget *parent) :
     edit_menu.addAction(&action_cut);
     action_paste.setShortcut(QKeySequence("Ctrl+V"));
     edit_menu.addAction(&action_paste);
+    action_paste_insert.setShortcut(QKeySequence("Ctrl+B"));
+    edit_menu.addAction(&action_paste_insert);
+    edit_menu.addSeparator();
+    edit_menu.addAction(&action_copy_offset);
+    edit_menu.addAction(&action_fill);
     menu_bar.addMenu(&edit_menu);
 
     action_goto.setShortcut(QKeySequence("Ctrl+G"));
@@ -64,6 +73,7 @@ MainWindow::MainWindow(QWidget *parent) :
     // Hook up event handlers
     QObject::connect(&action_open, SIGNAL(triggered(bool)), this, SLOT(handleOpen()));
     QObject::connect(&action_quit, SIGNAL(triggered(bool)), this, SLOT(close()));
+    QObject::connect(&action_copy, SIGNAL(triggered(bool)), this, SLOT(handleCopy()));
     QObject::connect(&action_goto, SIGNAL(triggered(bool)), this, SLOT(handleGoto()));
     QObject::connect(&editor_tabs, SIGNAL(currentChanged(int)), this, SLOT(handleTabChange()));
     QObject::connect(&editor_tabs, SIGNAL(tabCloseRequested(int)), this, SLOT(handleTabClose()));
@@ -111,14 +121,14 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *in_event)
 
 void MainWindow::handleOpen()
 {
-    QString fileName = QFileDialog::getOpenFileName(this);
-    if (fileName == "")
+    QString file_name = QFileDialog::getOpenFileName(this);
+    if (file_name == "")
         return;
 
     try {
-        auto editor = new HexWidget(fileName);
-        int newIdx = editor_tabs.addTab(editor, QFileInfo(fileName).fileName());
-        editor_tabs.setCurrentIndex(newIdx);
+        auto editor = new HexWidget(file_name, edit_menu);
+        int new_idx = editor_tabs.addTab(editor, QFileInfo(file_name).fileName());
+        editor_tabs.setCurrentIndex(new_idx);
     } catch (QString err) {
         QMessageBox msgBox(this);
         msgBox.setText(err);
@@ -140,6 +150,28 @@ void MainWindow::handleTabClose()
     HexWidget *hex_widget = reinterpret_cast<HexWidget*>(editor_tabs.currentWidget());
     if (hex_widget) {
         delete hex_widget;
+    }
+}
+
+void MainWindow::handleCopy()
+{
+    HexWidget *hex_widget = reinterpret_cast<HexWidget*>(editor_tabs.currentWidget());
+    if (hex_widget) {
+        auto bytes = hex_widget->getSelectedBytes();
+        if (!bytes.has_value())
+            return;
+
+        QString text;
+        bool first = true;
+        for (auto b : bytes.value()) {
+            if (!first) {
+                text += " ";
+            } else {
+                first = false;
+            }
+            text += QString::asprintf("%02X", static_cast<unsigned char>(b));
+        }
+        qApp->clipboard()->setText(text);
     }
 }
 
