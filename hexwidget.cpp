@@ -64,9 +64,23 @@ void HexWidget::cursorToOffset(qint64 offset, CursorDeflect deflect, bool extend
     if (offset < 0)
         return;
 
+    // Update selection accordingly
+    if (extend || QApplication::keyboardModifiers() == Qt::KeyboardModifier::ShiftModifier) {
+        selection.extend(offset);
+    } else {
+        selection.setPivot(offset);
+    }
+
+    // Save previous cursor position
+    auto prev_cursor_offs = cursor_pos;
+    auto prev_cursor_deflect = cursor_deflect;
+
     if (offset >= file.size()) {
         // Always deflect at EOF
         offset = file.size();
+        cursor_deflect = CursorDeflect::ToPrevious;
+    } else if (selection.valid() && cursor_pos > selection.pivotVal()) {
+        // After the selection
         cursor_deflect = CursorDeflect::ToPrevious;
     } else if (deflect != CursorDeflect::PreserveEol) {
         // No preserve instructed
@@ -75,12 +89,10 @@ void HexWidget::cursorToOffset(qint64 offset, CursorDeflect deflect, bool extend
         // Ignore preserve when not at EOL
         cursor_deflect = CursorDeflect::NoDeflect;
     }
-
-    qint64 prev_cursor_offs = cursor_pos;
     cursor_pos = offset;
 
-    if (!isOnScreen(cursor_pos)) {
-        if (!isOnScreen(prev_cursor_offs)) {
+    if (!isCursorOnScreen(cursor_pos, cursor_deflect)) {
+        if (!isCursorOnScreen(prev_cursor_offs, prev_cursor_deflect)) {
             // Cursor was not on screen -> just put the exact line on the
             // top of the screen
             scroll_bar.setValue(static_cast<int>(cursor_pos / BYTES_PER_LINE));
@@ -91,16 +103,6 @@ void HexWidget::cursorToOffset(qint64 offset, CursorDeflect deflect, bool extend
                                           - prev_cursor_offs / BYTES_PER_LINE);
             scroll_bar.setValue(scroll_bar.value() + delta);
         }
-    }
-
-    // Update selection accordingly
-    if (extend || QApplication::keyboardModifiers() == Qt::KeyboardModifier::ShiftModifier) {
-        if (cursor_pos > selection.pivotVal()) {
-            cursor_deflect = CursorDeflect::ToPrevious;
-        }
-        selection.extend(cursor_pos);
-    } else {
-        selection.setPivot(cursor_pos);
     }
 
     repaint();
@@ -118,36 +120,57 @@ std::optional<QByteArray> HexWidget::getSelectedBytes()
     return std::optional(bytes);
 }
 
-qint64 HexWidget::displayedLines()
+qint64 HexWidget::maxDisplayedLines()
 {
     return (this->height() - 30) / font_metrics.height();
 }
 
-bool HexWidget::isOnScreen(qint64 offs)
+bool HexWidget::isCursorOnScreen(qint64 pos, CursorDeflect deflect)
 {
     qint64 screen_offs = scroll_bar.value() * BYTES_PER_LINE;
-    qint64 screen_end = screen_offs + displayedLines() * BYTES_PER_LINE;
+    qint64 screen_end = screen_offs + maxDisplayedLines() * BYTES_PER_LINE;
 
-    return offs >= screen_offs && offs < screen_end;
+    // Take deflection into account
+    if (deflect == CursorDeflect::ToPrevious && pos > 0) {
+        --pos;
+    }
+    return pos >= screen_offs && pos < screen_end;
 }
 
-qint64 HexWidget::translateGuiCoords(int gui_x, int gui_y, CursorDeflect &deflect)
+qint64 HexWidget::guiToOffset(int gui_x, int gui_y, CursorDeflect &deflect)
 {
-    // Outside the hex grid
-    if (gui_x < grid_x || gui_y < grid_y || gui_x >= grid_x + BYTES_PER_LINE * cell_width + 2 * GAP)
-        return -1;
+    // Clamp coordinates
+    if (gui_x < grid_x) {
+        gui_x = grid_x;
+    }
+    if (gui_y < grid_y) {
+        gui_y = grid_y;
+    }
 
-    int x = gui_x - grid_x, y = gui_y - grid_y;
+    // Relativize coordinates to the GUI
+    qint64 x = gui_x - grid_x;
+    qint64 y = gui_y - grid_y;
+
+    // Account for the split in the middle
     if (x / cell_width > SPLITAT) {
         x -= GAP;
     }
+
+    // Calculate cell x coord
     x /= cell_width;
-    if (x % cell_width > 0 && x == BYTES_PER_LINE) {
+    if (x >= BYTES_PER_LINE) {
+        x = BYTES_PER_LINE;
         deflect = CursorDeflect::ToPrevious;
     } else {
         deflect = CursorDeflect::NoDeflect;
     }
+
+    // Calculate cell y coord
     y /= cell_height;
+    if (y >= maxDisplayedLines()) {
+        y = maxDisplayedLines();
+    }
+
     return (scroll_bar.value() + y) * BYTES_PER_LINE + x;
 }
 
@@ -164,7 +187,7 @@ void HexWidget::mousePressEvent(QMouseEvent *event)
 
     // Move to the click offset
     CursorDeflect deflect;
-    qint64 off = translateGuiCoords(event->x(), event->y(), deflect);
+    qint64 off = guiToOffset(event->x(), event->y(), deflect);
     cursorToOffset(off, deflect);
 }
 
@@ -180,15 +203,14 @@ void HexWidget::mouseMoveEvent(QMouseEvent *event)
 
     if (event->buttons() == Qt::MouseButton::LeftButton) {
         CursorDeflect deflect;
-        qint64 off = translateGuiCoords(event->x(), event->y(), deflect);
+        qint64 off = guiToOffset(event->x(), event->y(), deflect);
         cursorToOffset(off, deflect, true);
     }
 }
 
 void HexWidget::keyPressEvent(QKeyEvent *event)
 {
-    QKeyEvent *key_event = reinterpret_cast<QKeyEvent*>(event);
-    switch (key_event->key()) {
+    switch (event->key()) {
     case Qt::Key_Up:
         cursorToOffset(cursor_pos - BYTES_PER_LINE, CursorDeflect::PreserveEol);
         break;
@@ -196,10 +218,10 @@ void HexWidget::keyPressEvent(QKeyEvent *event)
         cursorToOffset(cursor_pos + BYTES_PER_LINE, CursorDeflect::PreserveEol);
         break;
     case Qt::Key_PageUp:
-        cursorToOffset(cursor_pos - BYTES_PER_LINE * displayedLines(), CursorDeflect::PreserveEol);
+        cursorToOffset(cursor_pos - BYTES_PER_LINE * maxDisplayedLines(), CursorDeflect::PreserveEol);
         break;
     case Qt::Key_PageDown:
-        cursorToOffset(cursor_pos + BYTES_PER_LINE * displayedLines(), CursorDeflect::PreserveEol);
+        cursorToOffset(cursor_pos + BYTES_PER_LINE * maxDisplayedLines(), CursorDeflect::PreserveEol);
         break;
     case Qt::Key_Left:
         cursorToOffset(cursor_pos - 1, CursorDeflect::NoDeflect);
@@ -267,7 +289,7 @@ void HexWidget::paintEvent(QPaintEvent *)
     // Draw file contents
     file_lock.lock();
     file.seek(scroll_bar.value() * BYTES_PER_LINE);
-    for (int line_idx = 0; line_idx < displayedLines(); ++line_idx) {
+    for (int line_idx = 0; line_idx < maxDisplayedLines(); ++line_idx) {
         // Read data
         auto hexline_offs = file.pos();
         auto hexline = file.read(BYTES_PER_LINE);

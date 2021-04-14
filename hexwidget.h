@@ -36,6 +36,27 @@ enum CursorDeflect {
 class HexWidget : public QWidget
 {
     Q_OBJECT
+
+public:
+    explicit HexWidget(QString fileName, QMenu &context_menu, QWidget *parent = nullptr);
+    ~HexWidget() override;
+
+    qint64 fileSize();
+
+    void cursorToOffset(qint64 offset,
+                        CursorDeflect deflect,
+                        bool extend_selection=false);
+
+    std::optional<QByteArray> getSelectedBytes();
+
+    virtual void contextMenuEvent(QContextMenuEvent *) override;
+    virtual void mousePressEvent(QMouseEvent *) override;
+    virtual void mouseMoveEvent(QMouseEvent *) override;
+    virtual void keyPressEvent(QKeyEvent *) override;
+    virtual void wheelEvent(QWheelEvent *) override;
+    virtual void resizeEvent(QResizeEvent *) override;
+    virtual void paintEvent(QPaintEvent *) override;
+
 private:
     QScrollBar scroll_bar;
     Selection selection;
@@ -57,34 +78,17 @@ private:
     int grid_x, grid_y;
     int cell_width, cell_height;
 
-    // Current number of displayed lines
-    qint64 displayedLines();
+    // Maximum number of lines that can currently be displayed
+    qint64 maxDisplayedLines();
+
+    // Number of lines actually on screen
+    qint64 curDisplayedLines();
 
     // Check if offset is currently on screen
-    bool isOnScreen(qint64 offset);
+    bool isCursorOnScreen(qint64 pos, CursorDeflect deflect);
 
-    // Translate on-GUI coordinates into an offset into file
-    qint64 translateGuiCoords(int x, int y, CursorDeflect &deflect);
-
-public:
-    explicit HexWidget(QString fileName, QMenu &context_menu, QWidget *parent = nullptr);
-    ~HexWidget() override;
-
-    qint64 fileSize();
-
-    void cursorToOffset(qint64 offset,
-                        CursorDeflect deflect,
-                        bool extend_selection=false);
-
-    std::optional<QByteArray> getSelectedBytes();
-
-    virtual void contextMenuEvent(QContextMenuEvent *) override;
-    virtual void mousePressEvent(QMouseEvent *) override;
-    virtual void mouseMoveEvent(QMouseEvent *) override;
-    virtual void keyPressEvent(QKeyEvent *) override;
-    virtual void wheelEvent(QWheelEvent *) override;
-    virtual void resizeEvent(QResizeEvent *) override;
-    virtual void paintEvent(QPaintEvent *) override;
+    // Translate GUI coordinates into an offset into file
+    qint64 guiToOffset(int x, int y, CursorDeflect &deflect);
 };
 
 #endif // HEXWIDGET_H
