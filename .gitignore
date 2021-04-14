@@ -1,0 +1,9 @@
+# CMake output
+CMakeFiles
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+# Build output
+HexEditor_autogen
+HexEditor
+*.o
