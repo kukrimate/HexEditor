@@ -97,7 +97,7 @@ void HexWidget::cursorToOffset(qint64 offset, CursorDeflect deflect, bool extend
         // Always deflect at EOF
         offset = file.size();
         cursor_deflect = CursorDeflect::ToPrevious;
-    } else if (selection.valid() && cursor_pos > selection.pivotVal()) {
+    } else if (selection.valid() && cursor_pos > selection.pivotVal() && offset & BPL_MASK) {
         // After the selection
         cursor_deflect = CursorDeflect::ToPrevious;
     } else if (deflect != CursorDeflect::PreserveEol) {
